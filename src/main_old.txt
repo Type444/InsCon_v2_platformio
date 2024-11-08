@@ -1,0 +1,494 @@
+
+#include <SPI.h>
+
+
+
+// #define CS_PIN 5  // Chip Select pin for ADS1158
+// #define DRDY_PIN 26
+// #define START_PIN 32
+// #define CLKEN_PIN 16
+
+#define CS_PIN 2  // Chip Select pin for ADS1158
+#define DRDY_PIN 17
+#define START_PIN 5
+#define CLKEN_PIN 16
+#define ADC_PWDN_PIN 21
+#define ADC_RST_PIN 4
+#define EN_5V_PIN 35
+
+// Function prototypes
+uint8_t readRegister(uint8_t regAddress, bool multiple = false);
+void writeRegister(uint8_t regAddress, uint8_t value, bool multiple = false);
+void setupFixedChannelMode();
+int32_t readChannelDataDirect();
+void configureGPIO(uint8_t direction);
+void setGPIO(uint8_t state);
+uint8_t readGPIO();
+void resetADS();
+
+
+
+uint8_t readDeviceID() {
+  digitalWrite(CS_PIN, LOW);        // Bring CS low to start communication
+  SPI.transfer(0x49);               // Send command to read Device ID (register 0x09)
+  uint8_t id = SPI.transfer(0x00);  // Send dummy byte and read the Device ID
+  digitalWrite(CS_PIN, HIGH);       // Bring CS high to end communication
+
+  return id;
+}
+
+// Function to read a register
+uint8_t readRegister(uint8_t regAddress, bool multiple) {
+  uint8_t command = 0x40 | (multiple ? 0x10 : 0x00) | (regAddress & 0x0F);  // Read command: 010 | MUL | A3 A2 A1 A0
+  digitalWrite(CS_PIN, LOW);
+  SPI.transfer(command);               // Send the command byte
+  uint8_t value = SPI.transfer(0x00);  // Receive the register value
+  digitalWrite(CS_PIN, HIGH);
+
+  return value;
+}
+
+
+// Function to write to a register
+void writeRegister(uint8_t regAddress, uint8_t value, bool multiple) {
+  uint8_t command = 0x60 | (multiple ? 0x10 : 0x00) | (regAddress & 0x0F);  // Write command: 011 | MUL | A3 A2 A1 A0
+  digitalWrite(CS_PIN, LOW);
+  SPI.transfer(command);  // Send the command byte
+  SPI.transfer(value);    // Send the value to write to the register
+  digitalWrite(CS_PIN, HIGH);
+}
+
+
+
+void displayConfig1Status(uint8_t config1Value) {
+  Serial.print("CONFIG1 Register Value: 0x");
+  Serial.println(config1Value, HEX);
+
+  Serial.println("CONFIG1 Register Settings:");
+  Serial.print("  Bit 7 - IDLMOD: ");
+  Serial.println((config1Value & 0x80) ? "1 (Low-power idle mode)" : "0 (Normal operation - Default)");
+
+  Serial.print("  Bits 6-4 - DLY[2:0]: ");
+  Serial.println((config1Value & 0x70) >> 4, BIN);
+
+  Serial.print("  Bits 3-2 - SBCS[1:0]: ");
+  Serial.println((config1Value & 0x0C) >> 2, BIN);
+
+  Serial.print("  Bits 1-0 - DRATE[1:0]: ");
+  Serial.println(config1Value & 0x03, BIN);
+}
+
+// Test 2: Fixed-Channel ADC Data Read
+void testFixedChannelADC() {
+  writeRegister(0x00, 0x2A);  // Set MUXMOD to Fixed-Channel mode
+  writeRegister(0x02, 0x00);  // Select AIN0 as positive input
+
+  uint32_t adcData = readChannelData();
+  //Serial.print("Fixed-Channel ADC Data: 0x");
+  Serial.println(adcData);
+}
+
+// int32_t readChannelDataDirect() {
+//   int32_t data = 0;
+//   int32_t data2 = 0;
+//   int32_t data3 = 0;
+//   // Start SPI communication by pulling CS low
+//   digitalWrite(CS_PIN, LOW);
+
+//   //Perform the direct read operation
+//   // for (int i = 0; i < 3; i++) {
+//   //     // First three SCLK transitions with DIN held inactive (sending 0x00)
+//   //     data = (data << 8) | (SPI.transfer(0x00) );
+//   // }
+//   data = SPI.transfer(0x00);
+//   // Serial.print(data, HEX);
+//   data2 = SPI.transfer(0x00);
+//   // Serial.print(data2, HEX);
+//   data3 = SPI.transfer(0x00);
+//   // Serial.println(data3, HEX);
+//   data = ((data << 16) | (data2 << 8)) | data3;
+//   // Serial.print("Data: ");
+//   // Serial.println(data, HEX);
+//   data = data + 8388608;
+//   if (data > 16777216) {
+//     data = data - 16777216;
+//   }
+//   // Continue reading the next 2 bytes if the status byte is disabled (16-bit data)
+//   //data = (data << 8) | SPI.transfer(0x00);
+//   //data = (data << 8) | SPI.transfer(0x00);
+
+//   // If status byte is enabled (24-bit data), add the status byte to the output
+//   // Uncomment the following line if you're using the status byte:
+//   // data = (data << 8) | SPI.transfer(0x00);
+
+//   // End SPI communication by pulling CS high
+//   digitalWrite(CS_PIN, HIGH);
+
+//   return data;  // Return the 16 or 24-bit data depending on your configuration
+// }
+
+int32_t readChannelDataDirect() {
+    uint32_t data = 0;
+    
+    // Start SPI communication by pulling CS low
+    digitalWrite(CS_PIN, LOW);
+
+    // Perform the direct read operation (24-bit read)
+    uint8_t data1 = SPI.transfer(0x00);  // MSB
+    uint8_t data2 = SPI.transfer(0x00);  // Middle byte
+    uint8_t data3 = SPI.transfer(0x00);  // LSB
+
+    // End SPI communication by pulling CS high
+    digitalWrite(CS_PIN, HIGH);
+
+    // Combine the three bytes into a 24-bit result
+    data = ((uint32_t)data1 << 16) | ((uint32_t)data2 << 8) | (uint32_t)data3;
+
+    // If the MSB (most significant bit) is 1, then it is a negative number in two's complement
+    if (data1 & 0x80) {
+        // Perform sign extension to convert the 24-bit number into a 32-bit signed integer
+        data |= 0xFF000000;  // Set the upper bits to 1 to represent the negative value
+    }
+
+    return (int32_t)data;  // Return the signed 32-bit value
+}
+
+
+uint32_t readChannelData() {
+  uint8_t status = 0;
+  uint16_t data = 0;
+
+  digitalWrite(CS_PIN, LOW);
+  SPI.transfer(0x10);              // Command for channel data read
+  status = SPI.transfer(0x00);     // Optional: Read status byte
+  data = SPI.transfer(0x00) << 8;  // Read high byte
+  data |= SPI.transfer(0x00);      // Read low byte
+  digitalWrite(CS_PIN, HIGH);
+
+  return ((uint32_t)status << 16) | data;  // Combine status and data if needed
+}
+
+
+// Test 3: Auto-Scan Mode
+void setupAutoScanMode() {
+  writeRegister(CONFIG0_REG, 0x0A);       // Set CONFIG0 for Auto-Scan mode
+  writeRegister(MUXSG1_REG, 0b11110000);  // Set MUXSG1 to select channels AIN12 to AIN15
+  writeRegister(MUXSG0_REG, 0b00000000);  // Ensure no channels from AIN0 to AIN7 are selected
+}
+
+
+// Test 4: GPIO Control
+void testGPIOControl() {
+  writeRegister(0x07, 0x00);  // Configure GPIOs as output
+  writeRegister(0x08, 0xFF);  // Set GPIOs high
+
+  delay(500);
+  writeRegister(0x08, 0x00);  // Set GPIOs low
+  delay(500);
+  writeRegister(0x08, 0xFF);  // Set GPIOs high
+}
+
+
+
+void resetADS() {
+  Serial.println("Resetting ADS...");
+  digitalWrite(CS_PIN, LOW);
+  SPI.transfer(0x60);  // Send reset command
+  digitalWrite(CS_PIN, HIGH);
+  Serial.println("Reset DONE");
+}
+
+// Function to display CONFIG0 status (already in your code)
+void displayConfig0Status(uint8_t config0Value) {
+  Serial.print("CONFIG0 Register Value: 0x");
+  Serial.println(config0Value, HEX);
+
+  Serial.println("CONFIG0 Register Settings:");
+  Serial.print("  Bit 7 - Must be 0: ");
+  Serial.println((config0Value & 0x80) ? "1 (Error)" : "0 (Correct)");
+  Serial.print("  Bit 6 - SPIRST: ");
+  Serial.println((config0Value & 0x40) ? "1 (Reset when SCLK inactive for 256 fCLK cycles)" : "0 (Reset when SCLK inactive for 4096 fCLK cycles - Default)");
+
+  Serial.print("  Bit 5 - MUXMOD: ");
+  Serial.println((config0Value & 0x20) ? "1 (Fixed-Channel mode)" : "0 (Auto-Scan mode - Default)");
+
+  Serial.print("  Bit 4 - BYPAS: ");
+  Serial.println((config0Value & 0x10) ? "1 (Use external ADC inputs)" : "0 (Use internal multiplexer connection - Default)");
+
+  Serial.print("  Bit 3 - CLKENB: ");
+  Serial.println((config0Value & 0x08) ? "1 (Clock output on CLKIO enabled - Default)" : "0 (Clock output on CLKIO disabled)");
+
+  Serial.print("  Bit 2 - CHOP: ");
+  Serial.println((config0Value & 0x04) ? "1 (Chopping enabled)" : "0 (Chopping disabled - Default)");
+
+  Serial.print("  Bit 1 - STAT: ");
+  Serial.println((config0Value & 0x02) ? "1 (Status byte enabled - Default)" : "0 (Status byte disabled)");
+
+  Serial.print("  Bit 0 - Must be 0: ");
+  Serial.println((config0Value & 0x01) ? "1 (Error)" : "0 (Correct)");
+}
+
+void setupFixedChannelMode() {
+  // Set CONFIG0 for Fixed-Channel mode with internal multiplexer connection
+  writeRegister(CONFIG0_REG, 0b00000000);  // 0x2A enables Fixed-Channel mode
+  writeRegister(CONFIG1_REG, 0b01110000);  // 0x2A enables Fixed-Channel mode
+  writeRegister(MUXSCH_REG, 0b10011010);  // 0x2A enables Fixed-Channel mode
+  writeRegister(MUXSG0_REG, 0b00000000);
+  writeRegister(MUXSG1_REG, 0b00000010);
+  writeRegister(SYSRED_REG, 0b00000000);
+  writeRegister(MUXDIF_REG, 0b00000000);
+}
+
+void printConfigurationRegisters() {
+  Serial.print("CONFIG0: 0x");
+  Serial.println(readRegister(0x00), HEX);
+  Serial.print("CONFIG1: 0x");
+  Serial.println(readRegister(0x01), HEX);
+  Serial.print("MUXSG0: 0x");
+  Serial.println(readRegister(0x02), HEX);
+  Serial.print("MUXSG1: 0x");
+  Serial.println(readRegister(0x03), HEX);
+}
+
+// Function to read and print internal system readings
+void printInternalSystemReadings() {
+  // Set the SYSRED register to enable internal system readings
+  uint8_t sysredValue = readRegister(SYSRED_REG);
+  Serial.print("[DEBUG] SYSRED initial value: 0x");
+  Serial.println(sysredValue, HEX);
+
+  // Enable all internal system readings: Reference, Gain, Temperature, and VCC
+  sysredValue |= (SYSRED_REF | SYSRED_GAIN | SYSRED_TEMP | SYSRED_VCC);
+  writeRegister(SYSRED_REG, sysredValue);
+
+  // Print the internal system readings
+  Serial.println("[DEBUG] Internal System Readings:");
+
+  // Read and print the reference voltage
+  uint32_t refReading = readInternalReading(SYSRED_REF);
+  Serial.print("  Reference Voltage: 0x");
+  Serial.println(refReading, HEX);
+
+  // Read and print the gain value
+  uint32_t gainReading = readInternalReading(SYSRED_GAIN);
+  Serial.print("  Gain: 0x");
+  Serial.println(gainReading, HEX);
+
+  // Read and print the temperature value
+  uint32_t tempReading = readInternalReading(SYSRED_TEMP);
+  Serial.print("  Temperature: 0x");
+  Serial.println(tempReading, HEX);
+
+  // Read and print the VCC value
+  uint32_t vccReading = readInternalReading(SYSRED_VCC);
+  Serial.print("  VCC: 0x");
+  Serial.println(vccReading, HEX);
+}
+
+// Function to read internal system reading based on the SYSRED bit
+uint32_t readInternalReading(uint8_t sysredBit) {
+  // Set SYSRED register to read the specific internal reading
+  uint8_t sysredValue = readRegister(SYSRED_REG);
+  sysredValue |= sysredBit;
+  writeRegister(SYSRED_REG, sysredValue);
+
+  // Wait for DRDY to indicate data is ready
+  while (digitalRead(DRDY_PIN) != LOW) {}
+
+  // Read the internal data
+  return readChannelData();
+}
+
+void configureGPIO(uint8_t direction) {
+  Serial.print("[DEBUG] Configuring GPIO direction to: 0x");
+  Serial.println(direction, HEX);
+
+  // Write the direction configuration to the GPIOD register
+  writeRegister(GPIOD_REG, direction);
+
+  // Read back and verify the configuration
+  uint8_t readBackValue = readRegister(GPIOD_REG);
+  if (readBackValue == direction) {
+    Serial.println("[DEBUG] GPIO direction configuration successful!");
+  } else {
+    Serial.print("[DEBUG] GPIO direction configuration failed! Read: 0x");
+    Serial.println(readBackValue, HEX);
+  }
+}
+
+// Function to set GPIO output states
+void setGPIO(uint8_t state) {
+  Serial.print("[DEBUG] Setting GPIO output state to: 0x");
+  Serial.println(state, HEX);
+
+  // Write the output state to the GPIOC register
+  writeRegister(GPIOC_REG, state);
+
+  // Read back and verify the state
+  uint8_t readBackValue = readRegister(GPIOC_REG);
+  if (readBackValue == state) {
+    Serial.println("[DEBUG] GPIO output state set successfully!");
+  } else {
+    Serial.print("[DEBUG] GPIO output state set failed! Read: 0x");
+    Serial.println(readBackValue, HEX);
+  }
+}
+
+// Function to read GPIO input states
+uint8_t readGPIO() {
+  // Read the input state from the GPIOC register
+  uint8_t gpioState = readRegister(GPIOC_REG);
+
+  Serial.print("[DEBUG] GPIO input state read: 0x");
+  Serial.println(gpioState, HEX);
+
+  return gpioState;
+}
+
+// Test function to toggle GPIOs and read back the values
+void testGPIO() {
+  Serial.println("[DEBUG] Starting GPIO Test...");
+
+  // Configure all GPIO pins as outputs
+  configureGPIO(0xFF);  // 0xFF sets all GPIO pins as outputs
+
+  // Set all GPIO pins high
+  setGPIO(0xFF);  // 0xFF sets all GPIO pins high
+  delay(1500);
+
+  // Set all GPIO pins low
+  setGPIO(0x00);  // 0x00 sets all GPIO pins low
+  delay(500);
+
+  // Configure all GPIO pins as inputs
+  configureGPIO(0x00);  // 0x00 sets all GPIO pins as inputs
+
+  // Read the GPIO pin states (should be 0x00 if all inputs are low)
+  uint8_t gpioState = readGPIO();
+
+  // Print the final state of the GPIO pins
+  Serial.print("[DEBUG] Final GPIO state: 0x");
+  Serial.println(gpioState, HEX);
+
+  Serial.println("[DEBUG] GPIO Test Complete!");
+}
+
+
+
+
+void setup() {
+  Serial.begin(115200);
+  SPI.begin();
+  SPI.setDataMode(SPI_MODE0);  // Set SPI Mode 0 (or the correct mode for your setup)
+  SPI.setBitOrder(MSBFIRST);
+
+  pinMode(CLKEN_PIN, OUTPUT);
+  pinMode(START_PIN, OUTPUT);
+  pinMode(CS_PIN, OUTPUT);
+  pinMode(DRDY_PIN, INPUT);
+  pinMode(ADC_RST_PIN, OUTPUT);
+  pinMode(ADC_PWDN_PIN, OUTPUT);
+  pinMode(EN_5V_PIN, OUTPUT);
+
+  digitalWrite(EN_5V_PIN, HIGH);
+  digitalWrite(CS_PIN, HIGH);
+  digitalWrite(ADC_RST_PIN, HIGH);
+  digitalWrite(ADC_PWDN_PIN, HIGH);
+  digitalWrite(START_PIN, LOW);
+  digitalWrite(CLKEN_PIN, HIGH);
+
+  delay(100);
+  Serial.println("[DEBUG] Starting ADS1158 Setup...");
+
+  // Step 1: Reset the ADS1158
+  resetADS();
+  delay(1000);
+
+  // Step 2: Verify Device ID
+  uint8_t deviceID = readDeviceID();
+  Serial.print("[DEBUG] ADS1158 Device ID: 0x");
+  Serial.println(deviceID, HEX);
+  if (deviceID != ID_DEFAULT) {
+    Serial.println("[ERROR] Device ID mismatch! Expected 0x9B.");
+  } else {
+    Serial.println("[DEBUG] Device ID verified.");
+  }
+  delay(500);
+
+  // Step 3: Test CONFIG1 Register Write/Read
+  uint8_t config1Value = readRegister(CONFIG1_REG);
+  Serial.print("[DEBUG] Initial CONFIG1 value: 0x");
+  Serial.println(config1Value, HEX);
+
+  // Clear bits for normal operation and lowest data rate
+  config1Value &= ~(CONFIG1_IDLMOD | CONFIG1_DRATE1 | CONFIG1_DRATE0);
+
+  Serial.print("[DEBUG] Modified CONFIG1 value: 0x");
+  Serial.println(config1Value, HEX);
+
+  writeRegister(CONFIG1_REG, config1Value);
+  uint8_t readBackValue = readRegister(CONFIG1_REG);
+  if (readBackValue == config1Value) {
+    Serial.println("[DEBUG] CONFIG1 write successful!");
+  } else {
+    Serial.println("[ERROR] CONFIG1 write failed!");
+  }
+  delay(500);
+
+  // Step 4: Test CONFIG0 Register Write/Read
+  uint8_t config0Value = CONFIG0_MUXMOD | CONFIG0_BYPAS;
+  Serial.print("[DEBUG] Writing to CONFIG0 register: 0x");
+  Serial.println(config0Value, HEX);
+
+  writeRegister(CONFIG0_REG, config0Value);
+  readBackValue = readRegister(CONFIG0_REG);
+  if (readBackValue == config0Value) {
+    Serial.println("[DEBUG] CONFIG0 write successful!");
+  } else {
+    Serial.println("[ERROR] CONFIG0 write failed!");
+  }
+  delay(500);
+
+  // Step 5: Set Up Fixed-Channel Mode and Test ADC
+  Serial.println("[DEBUG] Setting up Fixed-Channel mode...");
+  setupFixedChannelMode();
+  printConfigurationRegisters();
+  displayConfig0Status(readRegister(CONFIG0_REG));
+  displayConfig1Status(readRegister(CONFIG1_REG));
+
+
+  // Step 6: Test GPIO Control
+  Serial.println("[DEBUG] Testing GPIO control...");
+  testGPIO();
+
+  // Step 7: Test Internal System Readings
+  Serial.println("[DEBUG] Testing Internal System Readings...");
+  //printInternalSystemReadings();
+
+  // // Step 8: Configure and Test Auto-Scan Mode
+  // Serial.println("[DEBUG] Setting up Auto-Scan mode...");
+  // setupAutoScanMode();
+  // printConfigurationRegisters();
+
+
+  digitalWrite(START_PIN, HIGH);
+  Serial.println("[DEBUG] ADS1158 Setup Complete.");
+}
+
+
+
+void loop() {
+  //digitalWrite(ADC_RST_PIN, LOW);
+   //delay(10);
+  //digitalWrite(ADC_RST_PIN, HIGH);
+  //delay(1000);
+  //readDeviceID();
+  //Check if data is ready by monitoring DRDY
+  if (digitalRead(DRDY_PIN) == LOW) {
+    // Read ADC data from channel 0
+    int32_t adcData = readChannelDataDirect();
+    //Serial.print("[DEBUG] ADC Channel 0 Data: ");
+    Serial.println(adcData);
+    
+  }
+}
