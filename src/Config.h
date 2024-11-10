@@ -35,7 +35,7 @@ extern bool isBTdebugEnabled;
 // Device Configuration
 #define DEVICE_RIGHT 1
 #define DEVICE_LEFT 2
-#define DEVICE_NAME DEVICE_LEFT  // Set this to either DEVICE_RIGHT or DEVICE_LEFT
+#define DEVICE_NAME DEVICE_RIGHT  // Set this to either DEVICE_RIGHT or DEVICE_LEFT
 
 #define ACTIVE_ADC_CHANNELS 0b0111111111111100
 #define SPI_FREQ 2000000
@@ -92,6 +92,7 @@ void ADS1158_run_and_send_meas();
 uint8_t getBatteryPercentage();
 int lookupPercentage(float voltage);
 void processSerialCommands();
-void startRecording(int durationInSeconds, int sampleRate);
+void startRecording(int durationInSeconds);
+void loadOrSetDefaultPreferences();
 
 #endif  // SETTINGS_H
