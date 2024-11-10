@@ -1,13 +1,20 @@
-#include "ADS1158Driver.h"
+#include "ADS1158.h"
 #include "ADS1158Registers.h"
 #include <Arduino.h>
+#include <SPI.h>
 
-
+/**
+ * Constructor of the class
+ * @param cs_pin Chip select pin
+ */
 ADS1158::ADS1158(uint8_t cs_pin) : cs_pin(cs_pin) {
     pinMode(cs_pin, OUTPUT);
     digitalWrite(cs_pin, HIGH);
 }
 
+/**
+ * Initializes the ADS1158
+ */
 void ADS1158::begin() {
     reset();
     delay(100);
@@ -21,12 +28,16 @@ void ADS1158::begin() {
     }
 }
 
+/**
+ * Resets the ADS1158 and configures default settings
+ */
 void ADS1158::reset() {
     PRINT_DEBUG("[DEBUG] Resetting ADS1158...");
     digitalWrite(cs_pin, LOW);
     SPI.transfer(0x60);  // Reset Command
     digitalWrite(cs_pin, HIGH);
 
+    // Set default register values
     writeRegister(CONFIG0_REG, 0b00000010);
     writeRegister(CONFIG1_REG, 0b01010000);
     writeRegister(MUXDIF_REG, 0b00000000);
@@ -39,6 +50,10 @@ void ADS1158::reset() {
     PRINT_DEBUG("[DEBUG] ADS1158 Reset Complete.");
 }
 
+/**
+ * Sets a fixed input channel
+ * @param channel Channel number (0-15)
+ */
 void ADS1158::setFixedChannel(uint8_t channel) {
     if (channel > 15) {
         PRINT_DEBUG("[ERROR] Invalid channel number. Must be between 0 and 15.");
@@ -53,6 +68,15 @@ void ADS1158::setFixedChannel(uint8_t channel) {
     PRINT_DEBUG("[DEBUG] Fixed-Channel Mode configured for AIN" + String(channel));
 }
 
+/**
+ * Reads data from the ADS1158
+ * @param channel Reference to store channel number
+ * @param newData Reference to store new data status
+ * @param overflow Reference to store overflow status
+ * @param lowSupply Reference to store low supply status
+ * @param statusByteEnabled Indicates if the status byte is enabled
+ * @return 16-bit data value
+ */
 int16_t ADS1158::readData(uint8_t &channel, bool &newData, bool &overflow, bool &lowSupply, bool statusByteEnabled) {
     int16_t data = 0;
     uint8_t status = 0;
@@ -86,6 +110,10 @@ int16_t ADS1158::readData(uint8_t &channel, bool &newData, bool &overflow, bool 
     return data;
 }
 
+/**
+ * Sets the auto-scan mode for the ADS1158
+ * @param channels Channels to be enabled for auto-scan
+ */
 void ADS1158::setAutoScanMode(uint16_t channels) {
     PRINT_DEBUG("[DEBUG] Configuring Auto-Scan Mode...");
     uint8_t muxsg0Value = channels & 0xFF;
@@ -111,6 +139,11 @@ void ADS1158::setAutoScanMode(uint16_t channels) {
     PRINT_DEBUG("[DEBUG] Auto-Scan Mode configured for channels 0x" + String(channels, HEX));
 }
 
+/**
+ * Configures GPIO pin mode
+ * @param pin GPIO pin number
+ * @param state OUTPUT or INPUT state
+ */
 void ADS1158::pinModeGPIO(uint8_t pin, bool state) {
     PRINT_DEBUG("[DEBUG] Configuring GPIO...");
     uint8_t gpiodValue = readRegister(GPIOD_REG);
@@ -123,6 +156,11 @@ void ADS1158::pinModeGPIO(uint8_t pin, bool state) {
     PRINT_DEBUG("[DEBUG] GPIO Pin " + String(pin) + " set to " + (state ? "OUTPUT" : "INPUT") + ".");
 }
 
+/**
+ * Sets the state of a GPIO pin
+ * @param pin GPIO pin number
+ * @param value HIGH or LOW state
+ */
 void ADS1158::digitalWriteGPIO(uint8_t pin, bool value) {
     PRINT_DEBUG("[DEBUG] Setting GPIO State...");
     uint8_t gpiocValue = readRegister(GPIOC_REG);
@@ -135,6 +173,9 @@ void ADS1158::digitalWriteGPIO(uint8_t pin, bool value) {
     PRINT_DEBUG("[DEBUG] GPIO Pin " + String(pin) + " set to " + (value ? "HIGH" : "LOW") + ".");
 }
 
+/**
+ * Prints the values of all configuration registers
+ */
 void ADS1158::printRegisters() {
     Serial.println("Configuration Registers:");
     uint8_t config0 = readRegister(CONFIG0_REG);
@@ -199,66 +240,111 @@ void ADS1158::printRegisters() {
     Serial.println(")");
 }
 
+/**
+ * Configures SPI reset timer
+ * @param enable True to enable, false to disable
+ */
 void ADS1158::configureSpiResetTimer(bool enable) {
     uint8_t config0 = readRegister(CONFIG0_REG);
     config0 = enable ? (config0 | (1 << 6)) : (config0 & ~(1 << 6));
     writeRegister(CONFIG0_REG, config0);
 }
 
+/**
+ * Sets multiplexer mode to fixed channel or auto-scan
+ * @param isFixedChannelMode True for fixed channel mode, false for auto-scan
+ */
 void ADS1158::setMultiplexerMode(bool isFixedChannelMode) {
     uint8_t config0 = readRegister(CONFIG0_REG);
     config0 = isFixedChannelMode ? (config0 | (1 << 5)) : (config0 & ~(1 << 5));
     writeRegister(CONFIG0_REG, config0);
 }
 
+/**
+ * Sets multiplexer bypass mode
+ * @param useExternalMux True to use external MUX, false for internal
+ */
 void ADS1158::setMuxBypass(bool useExternalMux) {
     uint8_t config0 = readRegister(CONFIG0_REG);
     config0 = useExternalMux ? (config0 | (1 << 4)) : (config0 & ~(1 << 4));
     writeRegister(CONFIG0_REG, config0);
 }
 
+/**
+ * Enables or disables clock output
+ * @param enable True to enable, false to disable
+ */
 void ADS1158::setClockOutputEnabled(bool enable) {
     uint8_t config0 = readRegister(CONFIG0_REG);
     config0 = enable ? (config0 | (1 << 3)) : (config0 & ~(1 << 3));
     writeRegister(CONFIG0_REG, config0);
 }
 
+/**
+ * Configures the chopper feature
+ * @param enable True to enable, false to disable
+ */
 void ADS1158::configureChopper(bool enable) {
     uint8_t config0 = readRegister(CONFIG0_REG);
     config0 = enable ? (config0 | (1 << 2)) : (config0 & ~(1 << 2));
     writeRegister(CONFIG0_REG, config0);
 }
 
+/**
+ * Enables or disables the status byte
+ * @param enable True to enable, false to disable
+ */
 void ADS1158::setStatusByteEnabled(bool enable) {
     uint8_t config0 = readRegister(CONFIG0_REG);
     config0 = enable ? (config0 | (1 << 1)) : (config0 & ~(1 << 1));
     writeRegister(CONFIG0_REG, config0);
 }
 
+/**
+ * Sets idle mode to low power or normal
+ * @param lowPowerMode True for low power, false for normal operation
+ */
 void ADS1158::setIdleMode(bool lowPowerMode) {
     uint8_t config1 = readRegister(CONFIG1_REG);
     config1 = lowPowerMode ? (config1 | (1 << 7)) : (config1 & ~(1 << 7));
     writeRegister(CONFIG1_REG, config1);
 }
 
+/**
+ * Sets conversion delay
+ * @param delaySetting Delay setting value
+ */
 void ADS1158::setConversionDelay(uint8_t delaySetting) {
     uint8_t config1 = readRegister(CONFIG1_REG);
     config1 = (config1 & ~(0x70)) | (delaySetting << 4);
     writeRegister(CONFIG1_REG, config1);
 }
 
+/**
+ * Sets bias sense current
+ * @param currentSetting Bias sense current setting value
+ */
 void ADS1158::setBiasSenseCurrent(uint8_t currentSetting) {
     uint8_t config1 = readRegister(CONFIG1_REG);
     config1 = (config1 & ~(0x0C)) | (currentSetting << 2);
     writeRegister(CONFIG1_REG, config1);
 }
 
+/**
+ * Sets the data rate for ADC conversion
+ * @param dataRateSetting Data rate setting value
+ */
 void ADS1158::setDataRate(uint8_t dataRateSetting) {
     uint8_t config1 = readRegister(CONFIG1_REG);
     config1 = (config1 & ~(0x03)) | dataRateSetting;
     writeRegister(CONFIG1_REG, config1);
 }
 
+/**
+ * Writes a value to a specific register
+ * @param reg Register address
+ * @param value Value to write
+ */
 void ADS1158::writeRegister(uint8_t reg, uint8_t value) {
     uint8_t command = 0x60 | (reg & 0x0F);  // Register Write command
     digitalWrite(cs_pin, LOW);
@@ -267,6 +353,11 @@ void ADS1158::writeRegister(uint8_t reg, uint8_t value) {
     digitalWrite(cs_pin, HIGH);
 }
 
+/**
+ * Reads a value from a specific register
+ * @param reg Register address
+ * @return Value read from the register
+ */
 uint8_t ADS1158::readRegister(uint8_t reg) {
     uint8_t command = 0x40 | (reg & 0x0F);  // Register Read command
     digitalWrite(cs_pin, LOW);
@@ -276,6 +367,10 @@ uint8_t ADS1158::readRegister(uint8_t reg) {
     return value;
 }
 
+/**
+ * Prints the binary representation of a value
+ * @param value Value to print in binary
+ */
 void ADS1158::printBinary(uint8_t value) {
     for (int i = 7; i >= 0; i--) {
         Serial.print((value >> i) & 0x01);

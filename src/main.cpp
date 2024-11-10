@@ -1,8 +1,7 @@
 #include <Arduino.h>
-#include <SPI.h>
 #include <BluetoothSerial.h>
 #include "Config.h"
-#include "ADS1158Driver.h"
+#include "ADS1158.h"
 #include <Preferences.h>
 
 
