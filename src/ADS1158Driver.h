@@ -23,26 +23,34 @@ enum DataRate {
   DR_1831_SPS = 0b11    // 1831 SPS
 };
 
-// ADS1158 functions
-void ADS1158_init();
-void ADS1158_reset();
-void ADS1158_setFixedChannel(uint8_t channel);
-int16_t ADS1158_readData(uint8_t &channel, bool &newData, bool &overflow, bool &lowSupply, bool statusByteEnabled);
-void ADS1158_setAutoScanMode(uint16_t channels);
-void ADS1158_pinmodeGPIO(uint8_t pin, bool state);
-void ADS1158_digitalWriteGPIO(uint8_t pin, bool value);
-uint8_t ADS1158_readRegister(uint8_t reg);
-void ADS1158_writeRegister(uint8_t reg, uint8_t value);
-void ADS1158_printRegisters();
-void ADS1158_configureSpiResetTimer(bool enable);
-void ADS1158_setMultiplexerMode(bool isFixedChannelMode);
-void ADS1158_setMuxBypass(bool useExternalMux);
-void ADS1158_setClockOutputEnabled(bool enable);
-void ADS1158_configureChopper(bool enable);
-void ADS1158_setStatusByteEnabled(bool enable);
-void ADS1158_setIdleMode(bool lowPowerMode);
-void ADS1158_setConversionDelay(uint8_t delaySetting);
-void ADS1158_setBiasSenseCurrent(uint8_t currentSetting);
-void ADS1158_setDataRate(uint8_t dataRateSetting);
+class ADS1158 {
+public:
+    ADS1158(uint8_t cs_pin);
+    void begin();
+    void reset();
+    void setFixedChannel(uint8_t channel);
+    int16_t readData(uint8_t &channel, bool &newData, bool &overflow, bool &lowSupply, bool statusByteEnabled);
+    void setAutoScanMode(uint16_t channels);
+    void pinModeGPIO(uint8_t pin, bool state);
+    void digitalWriteGPIO(uint8_t pin, bool value);
+    void printRegisters();
+    void configureSpiResetTimer(bool enable);
+    void setMultiplexerMode(bool isFixedChannelMode);
+    void setMuxBypass(bool useExternalMux);
+    void setClockOutputEnabled(bool enable);
+    void configureChopper(bool enable);
+    void setStatusByteEnabled(bool enable);
+    void setIdleMode(bool lowPowerMode);
+    void setConversionDelay(uint8_t delaySetting);
+    void setBiasSenseCurrent(uint8_t currentSetting);
+    void setDataRate(uint8_t dataRateSetting);
+
+private:
+    uint8_t cs_pin;
+    void writeRegister(uint8_t reg, uint8_t value);
+    uint8_t readRegister(uint8_t reg);
+    void printBinary(uint8_t value);
+};
+
 
 #endif  // ADS1158_DRIVER_H

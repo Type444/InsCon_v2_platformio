@@ -17,6 +17,7 @@ uint8_t bufferIndex = 0;
 bool isSerialDebugEnabled = false;
 bool isBTdebugEnabled = false;
 
+ADS1158 adc(CS_PIN);  // Create an instance of ADS1158
 
 
 
@@ -39,9 +40,10 @@ void setup() {
   SPI.setBitOrder(MSBFIRST);
   initializeHardwarePins();
   PRINT_DEBUG("[DEBUG] Initializing ADS1158...");
-  ADS1158_init();
-  ADS1158_setAutoScanMode(ACTIVE_ADC_CHANNELS);
-  ADS1158_printRegisters();
+  adc.begin();  // Replace ADS1158_init() with adc.begin()
+  adc.setAutoScanMode(ACTIVE_ADC_CHANNELS);  // Replace ADS1158_setAutoScanMode() with adc.setAutoScanMode()
+  adc.printRegisters();  // Replace ADS1158_printRegisters() with adc.printRegisters()
+
   attachInterrupt(digitalPinToInterrupt(DRDY_PIN), dataReadyISR, FALLING);
   digitalWrite(LED_PIN, HIGH);
   digitalWrite(START_PIN, HIGH);
@@ -59,7 +61,7 @@ void scanAdcDataAutomatically(int16_t channelData[]) {
       bool newData = false, overflow = false, lowSupply = false;
 
       // Read the ADC data and retrieve the current channel number
-      int16_t adcData = ADS1158_readData(currentChannel, newData, overflow, lowSupply, true);
+      int16_t adcData = adc.readData(currentChannel, newData, overflow, lowSupply, true);
 
       // Store data if valid and the channel is within the range 2 to 14
       if (newData && currentChannel >= 2 && currentChannel <= 14) {
