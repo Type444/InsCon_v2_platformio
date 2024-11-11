@@ -2,10 +2,13 @@
 #include <BluetoothSerial.h>
 #include "Config.h"
 #include "ADS1158.h"
-#include <Preferences.h>
+#include <PreferencesManager.h>
+#include <map>
+#include <functional>
 
+std::map<String, std::function<void(String)>> commandMap;
 BluetoothSerial SerialBT; // Initialize the Bluetooth serial object
-Preferences preferences;
+PreferencesManager preferencesManager("my-app");
 
 volatile bool dataReadyFlag = false;
 uint8_t measurementBuffer[NUM_MEASUREMENTS * MEASUREMENT_SIZE]; // Buffer to store multiple measurements
@@ -27,8 +30,15 @@ void setup() {
     initializeSPI();
     initializeHardwarePins();
     initializeADS1158();
-    loadOrSetDefaultPreferences();
+            
+    preferencesManager.loadOrSetDefaultPreferences();
 }
+
+void loop()
+{
+    processSerialCommands();
+}
+
 
 void initializeBluetooth() {
     SerialBT.begin(DEVICE_BT_IDENTIFIER);
@@ -145,10 +155,6 @@ void ADS1158_run_and_send_meas()
   storeMeasurementInBuffer(channelData, timestamp, measurementBuffer, &bufferIndex);
 }
 
-void loop()
-{
-  processSerialCommands();
-}
 
 void initializeHardwarePins()
 {
@@ -172,130 +178,7 @@ void initializeHardwarePins()
   digitalWrite(BAT_ADC_EN, LOW);
 }
 
-bool getPreference(const String &key, bool defaultValue) {
-    return preferences.getBool(key.c_str(), defaultValue);
-}
 
-uint16_t getPreference(const String &key, uint16_t defaultValue) {
-    return preferences.getUInt(key.c_str(), defaultValue);
-}
-
-void setPreference(const String &key, bool value) {
-    preferences.putBool(key.c_str(), value);
-}
-
-void setPreference(const String &key, uint16_t value) {
-    preferences.putUInt(key.c_str(), value);
-}
-
-void loadOrSetDefaultPreferences()
-{
-  // Open the preferences storage
-  preferences.begin("my-app", false);
-
-  // Check if the preferences exist
-
-  // Load and set the values from EEPROM
-
-  uint16_t ActiveChannels = preferences.getUInt("Channels", ActiveChannels);
-  isSerialDebugEnabled = preferences.getBool("DebugUSB", isSerialDebugEnabled);
-  isBTdebugEnabled = preferences.getBool("DebugBT", isBTdebugEnabled);
-
-  // Load and set other configuration values similarly
-  if (isBTdebugEnabled)
-  {
-    SerialBT.println("[DEBG] Preferences loaded.");
-  }
-  if (isSerialDebugEnabled)
-  {
-    Serial.println("Preferences loaded.");
-  }
-  // Close the preferences storage
-  preferences.end();
-}
-
-void resetPreferencesToDefaults()
-{
-  // Open the preferences storage
-  preferences.begin("my-app", false);
-
-  // Remove all preferences
-  preferences.clear();
-
-  // Set all values to their default values
-  uint16_t ActiveChannels = ACTIVE_ADC_CHANNELS; // For future use
-  isSerialDebugEnabled = true;                   // Set to your desired default value
-  isBTdebugEnabled = true;                       // Set to your desired default value
-
-  // Set other configuration values to their defaults similarly
-
-  // Close the preferences storage
-  preferences.end();
-}
-
-void savePreferences()
-{
-  // Open the preferences storage
-  uint16_t ActiveChannels = ACTIVE_ADC_CHANNELS;
-
-  if (!preferences.begin("my-app", false))
-  {
-    SerialBT.println("[INFO] Failed to open preferences for saving");
-    return;
-  }
-  // Save the current configuration values to EEPROM
-
-  preferences.putUInt("Channels", ActiveChannels);
-  preferences.putBool("DebugUSB", isSerialDebugEnabled);
-  preferences.putBool("DebugBT", isBTdebugEnabled);
-
-  // Save other configuration values similarly
-  if (isBTdebugEnabled)
-  {
-    SerialBT.println("[INFO] Preferences saved.");
-  }
-  // Close the preferences storage
-  preferences.end();
-}
-
-void listPreferences()
-{
-  // Open the preferences storage
-  preferences.begin("my-app", false);
-
-  // Read and print each preference value
-  SerialBT.println("[INFO] Current Configuration Preferences:");
-  SerialBT.println("[INFO] NumberOfChannels: " + String(preferences.getUInt("Channels", 0)));
-  SerialBT.println("[INFO] isSerialDebugEnabled: " + String(preferences.getBool("DebugUSB", true)));
-  SerialBT.println("[INFO] isBTdebugEnabled: " + String(preferences.getBool("DebugBT", true)));
-
-  // Read and print other preferences similarly
-
-  // Close the preferences storage
-  preferences.end();
-}
-
-void listDebugPreferences()
-{
-  // Open the preferences storage
-  preferences.begin("my-app", false);
-
-  // Read the preferences
-  bool isSerialDebugEnabled = preferences.getBool("DebugUSB", true);
-  bool isBTdebugEnabled = preferences.getBool("DebugBT", true);
-
-  // Close the preferences storage
-  preferences.end();
-
-  // Convert boolean values to '1' or '0' and concatenate them into a string
-  String configString = "[CNFG]";
-  configString += (isSerialDebugEnabled ? '1' : '0');
-  configString += (isBTdebugEnabled ? '1' : '0');
-  configString += DEVICE_NAME;
-
-  // Output the configuration string to SerialBT
-  SerialBT.print(configString);
-}
 
 uint8_t getBatteryPercentage()
 {
@@ -341,139 +224,144 @@ int lookupPercentage(float voltage)
   return int(percentage); // Convert to integer percentage
 }
 
-void processSerialCommands()
-{
-  if (SerialBT.available())
-  {
-    // String command = Serial.readStringUntil('\n');
-    String command = SerialBT.readStringUntil('\n');
-    if (isSerialDebugEnabled)
-    {
-      Serial.println("Command read: " + command);
-    }
-    // SerialBT.println("Command read: " + command);
-    command.trim();
-    if (command.startsWith("/help"))
-    {
-      SerialBT.println("Available commands:");
-      SerialBT.println("/debugBT [true/false] - Enable or disable Bluetooth debug messages");
-      SerialBT.println("/debugUSB [true/false] - Enable or disable Serial USB debug messages");
-      SerialBT.println("/single - Perform a single read of ADC values");
-      SerialBT.println("/start -t [Time in seconds] -r [sample rate in Hz] - Start recording and sending ADC data via Bluetooth");
-      SerialBT.println("/setChannels [value] - Set the number of channels (1 to 12)");
-      SerialBT.println("/testMode [true/false] - Enable or disable test mode with randomly generated values");
-      SerialBT.println("/checkHardware - Perform hardware checks");
-      SerialBT.println("/getConfig - Display the current configuration parameters");
-      SerialBT.println("/setActiveChannels [config1] [config2] [config3] - Manually set the ADC configuration (0 to 4 for each value)");
-      SerialBT.println("/getMAC - Display the MAC address of the ESP32");
-      SerialBT.println("/listPreferences - List stored preferences");
-      SerialBT.println("/help - Display this message again");
-    }
-    else if (command.startsWith("/debugBT"))
-    {
-      int spaceIndex = command.indexOf(" ");
-      if (spaceIndex != -1)
-      {
-        String valueStr = command.substring(spaceIndex + 1);
-        if (valueStr.equals("true"))
-        {
-          isBTdebugEnabled = true;
-          SerialBT.println("[INFO] Debug messages via Bluetooth are enabled.");
+
+
+// Initialize command handlers
+void initializeCommandMap() {
+   commandMap = {
+      {"/help", [](String param) { displayHelp(); }},
+      {"/debugBT", [](String param) { handleDebugBTCommand(param); }},
+      {"/debugUSB", [](String param) { handleDebugUSBCommand(param); }},
+      {"/getMAC", [](String param) { displayMACAddress(); }},
+      {"/single", [](String param) { performSingleADCRead(); }},
+      {"/start", [](String param) { handleStartCommand(param); }},
+      {"/checkHardware", [](String param) { performHardwareChecks(); }},
+      {"/getConfig", [](String param) { displayConfig(); }},
+      {"/listDebugPreferences", [](String param) { preferencesManager.listDebugPreferences(); }}
+  };
+
+}
+
+void processSerialCommands() {
+    if (SerialBT.available()) {
+        String command = SerialBT.readStringUntil('\n');
+        command.replace("\r", "");  // Remove any carriage returns
+        command.trim();  // Remove trailing/leading spaces
+
+        if (isSerialDebugEnabled) {
+            Serial.println("Command read: '" + command + "'");
         }
-        else if (valueStr.equals("false"))
-        {
-          isBTdebugEnabled = false;
-          SerialBT.println("[INFO] Debug messages via Bluetooth are disabled.");
+
+        // Find the first word (command) and any additional parameters
+        int spaceIndex = command.indexOf(' ');
+        String cmdKey = (spaceIndex == -1) ? command : command.substring(0, spaceIndex);
+        String param = (spaceIndex == -1) ? "" : command.substring(spaceIndex + 1);
+
+        if (isSerialDebugEnabled) {
+            Serial.println("Command: '" + command + "'");
+            Serial.println("cmdKey: '" + cmdKey + "'");
+            Serial.println("param: '" + param + "'");
+            // Print cmdKey in hex to check for hidden characters
+            Serial.print("cmdKey in hex: ");
+            for (unsigned int i = 0; i < cmdKey.length(); ++i) {
+                Serial.print(cmdKey[i], HEX);
+                Serial.print(" ");
+            }
+            Serial.println();
         }
-        else
-        {
-          SerialBT.println("[ERROR] Invalid value. Use 'true' or 'false' to enable or disable debug messages via Bluetooth.");
+
+        // Look up command in the map and execute associated function
+        bool commandFound = false;
+        for (auto const& entry : commandMap) {
+            if (cmdKey.equals(entry.first)) {
+                entry.second(param);
+                commandFound = true;
+                break;
+            }
         }
-      }
-      else
-      {
-        SerialBT.println("[ERROR] Missing value. Use 'true' or 'false' to enable or disable debug messages via Bluetooth.");
-      }
+        if (!commandFound) {
+            SerialBT.print("[INFO] Invalid command! Type '/help' to see the list of available commands.");
+        }
     }
-    else if (command.startsWith("/getMAC"))
-    {
-      String macAddress = "Not avaliable"; // getMACAddress();
-      SerialBT.println("ESP32 MAC Address: " + macAddress);
+}
+
+// Command handler functions
+void displayHelp() {
+    SerialBT.println("Available commands:");
+    SerialBT.println("/debugBT [true/false] - Enable or disable Bluetooth debug messages");
+    SerialBT.println("/debugUSB [true/false] - Enable or disable Serial USB debug messages");
+    SerialBT.println("/single - Perform a single read of ADC values");
+    SerialBT.println("/start -t [Time in seconds] -r [sample rate in Hz] - Start recording and sending ADC data via Bluetooth");
+    SerialBT.println("/setChannels [value] - Set the number of channels (1 to 12)");
+    SerialBT.println("/testMode [true/false] - Enable or disable test mode with randomly generated values");
+    SerialBT.println("/checkHardware - Perform hardware checks");
+    SerialBT.println("/getConfig - Display the current configuration parameters");
+    SerialBT.println("/setActiveChannels [config1] [config2] [config3] - Manually set the ADC configuration (0 to 4 for each value)");
+    SerialBT.println("/getMAC - Display the MAC address of the ESP32");
+    SerialBT.println("/listPreferences - List stored preferences");
+    SerialBT.println("/help - Display this message again");
+}
+
+void handleDebugBTCommand(String param) {
+    if (param == "true") {
+        isBTdebugEnabled = true;
+        SerialBT.println("[INFO] Debug messages via Bluetooth are enabled.");
+    } else if (param == "false") {
+        isBTdebugEnabled = false;
+        SerialBT.println("[INFO] Debug messages via Bluetooth are disabled.");
+    } else {
+        SerialBT.println("[ERROR] Invalid value. Use 'true' or 'false' to enable or disable debug messages via Bluetooth.");
     }
-    else if (command.startsWith("/debugUSB"))
-    {
-      int spaceIndex = command.indexOf(" ");
-      if (spaceIndex != -1)
-      {
-        String valueStr = command.substring(spaceIndex + 1);
-        if (valueStr.equals("true"))
-        {
-          isSerialDebugEnabled = true;
-          SerialBT.print("[INFO] Debug messages via Serial USB are enabled.");
-        }
-        else if (valueStr.equals("false"))
-        {
-          isSerialDebugEnabled = false;
-          SerialBT.print("[INFO] Debug messages via Serial USB are disabled.");
-        }
-        else
-        {
-          SerialBT.print("[ERROR] Invalid value. Use 'true' or 'false' to enable or disable debug messages via Serial USB.");
-        }
-      }
-      else
-      {
-        SerialBT.print("[ERROR] Missing value. Use 'true' or 'false' to enable or disable debug messages via Serial USB.");
-      }
+    preferencesManager.savePreferences();
+}
+
+void handleDebugUSBCommand(String param) {
+    if (param == "true") {
+        isSerialDebugEnabled = true;
+        SerialBT.println("[INFO] Debug messages via Serial USB are enabled.");
+    } else if (param == "false") {
+        isSerialDebugEnabled = false;
+        SerialBT.println("[INFO] Debug messages via Serial USB are disabled.");
+    } else {
+        SerialBT.println("[ERROR] Invalid value. Use 'true' or 'false' to enable or disable debug messages via Serial USB.");
     }
-    else if (command.startsWith("/single"))
-    {
-      String data = "";
-      // data = readADCValues();
-      SerialBT.println(data);
-    }
-    else if (command.startsWith("/start"))
-    {
-      // Find the position of the time flag
-      int timeFlagPos = command.indexOf("-t");
-      if (timeFlagPos != -1)
-      {
-        // Extract the duration from the command
+    preferencesManager.savePreferences();
+}
+
+void displayMACAddress() {
+    String macAddress = "Not available"; // Replace with actual MAC retrieval
+    SerialBT.println("ESP32 MAC Address: " + macAddress);
+}
+
+void performSingleADCRead() {
+    String data = ""; // Replace with actual ADC read logic
+    SerialBT.println(data);
+}
+
+void handleStartCommand(String param) {
+    int timeFlagPos = param.indexOf("-t");
+    if (timeFlagPos != -1) {
         int timeValuePos = timeFlagPos + 2; // Length of "-t"
-        String durationStr = command.substring(timeValuePos);
+        String durationStr = param.substring(timeValuePos);
         int durationInSeconds = durationStr.toInt();
         startRecording(durationInSeconds);
-      }
-      else
-      {
-        Serial.println("[ERROR] Missing -t flag for recording time");
+    } else {
         SerialBT.println("[ERROR] Missing -t flag for recording time");
-      }
     }
-    else if (command.startsWith("/checkHardware"))
-    {
-      // performHardwareChecks();
-    }
-    else if (command.startsWith("/getConfig"))
-    {
-      SerialBT.print("[INFO] Current Configuration Parameters:");
-      SerialBT.print("[INFO] Device Name: " + String(DEVICE_NAME));
-      SerialBT.print("[INFO] Serial Debug Enabled: " + String(isSerialDebugEnabled));
-      SerialBT.print("[INFO] Bluetooth Debug Enabled: " + String(isBTdebugEnabled));
-      // SerialBT.println("Battery Level: " + String(getBatteryPercentage()) + "%");
-    }
-    else if (command.startsWith("/listDebugPreferences"))
-    {
-      listDebugPreferences();
-    }
-    else
-    {
-      SerialBT.print("[INFO] Invalid command! Type '/help' to see the list of available commands.");
-      return;
-    }
-    savePreferences();
-  }
 }
+
+void performHardwareChecks() {
+    // Logic for hardware checks
+}
+
+void displayConfig() {
+    SerialBT.println("[INFO] Current Configuration Parameters:");
+    SerialBT.println("[INFO] Device Name: " + String(DEVICE_NAME));
+    SerialBT.println("[INFO] Serial Debug Enabled: " + String(isSerialDebugEnabled));
+    SerialBT.println("[INFO] Bluetooth Debug Enabled: " + String(isBTdebugEnabled));
+}
+
+
 
 void startRecording(int durationInSeconds)
 {

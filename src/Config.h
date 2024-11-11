@@ -61,7 +61,7 @@ constexpr char DEVICE_BT_IDENTIFIER[] = "ESP32_LEFT";
 
 // Function Prototypes
 void scanAdcDataAutomatically(int16_t channelData[]);
-void sendData(int32_t channelData[], int32_t previousChannelData[]);
+//void sendData(int32_t channelData[], int32_t previousChannelData[]);
 void printBinary(uint8_t value);
 void initializeHardwarePins();
 void storeMeasurementInBuffer(const int16_t dataBuffer[], uint32_t timestamp, uint8_t *measurementBuffer, uint8_t *bufferIndex);
@@ -71,9 +71,19 @@ uint8_t getBatteryPercentage();
 int lookupPercentage(float voltage);
 void processSerialCommands();
 void startRecording(int durationInSeconds);
-void loadOrSetDefaultPreferences();
 void initializeBluetooth();
 void initializeSPI();
 void initializeADS1158();
+
+// Command Handler Functions
+void displayHelp();
+void handleDebugBTCommand(String param);
+void handleDebugUSBCommand(String param);
+void displayMACAddress();
+void performSingleADCRead();
+void handleStartCommand(String param);
+void performHardwareChecks();
+void displayConfig();
+void initializeCommandMap();
 
 #endif  // CONFIG_H
