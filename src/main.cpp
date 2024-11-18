@@ -7,7 +7,7 @@
 #include <functional>
 
 std::map<String, std::function<void(String)>> commandMap;
-BluetoothSerial SerialBT; // Initialize the Bluetooth serial object
+BluetoothSerial SerialBT; 
 PreferencesManager preferencesManager("my-app");
 
 volatile bool dataReadyFlag = false;
@@ -17,7 +17,7 @@ uint8_t bufferIndex = 0;
 bool isSerialDebugEnabled = false;
 bool isBTdebugEnabled = false;
 
-ADS1158 adc(CS_PIN); // Create an instance of ADS1158
+ADS1158 adc(CS_PIN); 
 
 void IRAM_ATTR dataReadyISR()
 {
@@ -124,7 +124,7 @@ void storeMeasurementInBuffer(const int16_t dataBuffer[], uint32_t timestamp, ui
 
 void transmitBufferData(uint8_t *measurementBuffer, uint8_t *bufferIndex)
 {
-  // Calculate the total size to send
+  
   uint16_t totalBufferSize = (*bufferIndex) * (MEASUREMENT_SIZE + MARKER_SIZE);
 
   if (isSerialDebugEnabled)
@@ -135,23 +135,23 @@ void transmitBufferData(uint8_t *measurementBuffer, uint8_t *bufferIndex)
   {
     SerialBT.write(measurementBuffer, totalBufferSize);
   }
-  // Reset the buffer index after sending
+  
   *bufferIndex = 0;
 }
 
 void ADS1158_run_and_send_meas()
 {
   int16_t channelData[TOTAL_CHANNELS] = {0}; // Data for channels 2 to 14
-  uint32_t timestamp = millis(); // Capture current timestamp
+  uint32_t timestamp = millis(); 
 
-  // Step 1: Get ADC data for all channels
+  
   scanAdcDataAutomatically(channelData);
 
-  // Create a local buffer and index
-  uint8_t measurementBuffer[NUM_MEASUREMENTS * (MEASUREMENT_SIZE + MARKER_SIZE)]; // Buffer to store multiple measurements
-  uint8_t bufferIndex = 0;                                                        // Current position in the buffer
 
-  // Step 2: Buffer the measurement
+  uint8_t measurementBuffer[NUM_MEASUREMENTS * (MEASUREMENT_SIZE + MARKER_SIZE)]; // Buffer to store multiple measurements
+  uint8_t bufferIndex = 0;                                                        
+
+  
   storeMeasurementInBuffer(channelData, timestamp, measurementBuffer, &bufferIndex);
 }
 
@@ -193,7 +193,7 @@ uint8_t getBatteryPercentage()
 
 int lookupPercentage(float voltage)
 {
-  // Define a lookup table with voltage levels and corresponding battery percentages for 1S
+  
   const float voltageTable[] = {
       4.2, 4.15, 4.11, 4.08, 4.02, 3.98, 3.95, 3.91, 3.87, 3.85, 3.84, 3.82, 3.8, 3.79, 3.77, 3.75, 3.73, 3.71, 3.69, 3.61, 3.27};
   const int percentageTable[] = {
@@ -251,8 +251,7 @@ void processSerialCommands() {
         if (isSerialDebugEnabled) {
             Serial.println("Command read: '" + command + "'");
         }
-
-        // Find the first word (command) and any additional parameters
+        
         int spaceIndex = command.indexOf(' ');
         String cmdKey = (spaceIndex == -1) ? command : command.substring(0, spaceIndex);
         String param = (spaceIndex == -1) ? "" : command.substring(spaceIndex + 1);
@@ -329,12 +328,12 @@ void handleDebugUSBCommand(String param) {
 }
 
 void displayMACAddress() {
-    String macAddress = "Not available"; // Replace with actual MAC retrieval
+    String macAddress = "Not available"; // Maybe is not necessary
     SerialBT.println("ESP32 MAC Address: " + macAddress);
 }
 
 void performSingleADCRead() {
-    String data = ""; // Replace with actual ADC read logic
+    String data = ""; // #TODO
     SerialBT.println(data);
 }
 
@@ -351,7 +350,7 @@ void handleStartCommand(String param) {
 }
 
 void performHardwareChecks() {
-    // Logic for hardware checks
+    // Copy from previous version #TODO
 }
 
 void displayConfig() {

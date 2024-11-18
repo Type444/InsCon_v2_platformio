@@ -98,7 +98,7 @@ void PreferencesManager::listDebugPreferences()
   bool isSerialDebugEnabled = preferences.getBool("DebugUSB", true);
   bool isBTdebugEnabled = preferences.getBool("DebugBT", true);
 
-  // Close the preferences storage
+  
   end();
 
   // Convert boolean values to '1' or '0' and concatenate them into a string
